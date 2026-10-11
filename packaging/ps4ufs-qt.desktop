@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ps4ufs
+GenericName=PS4 UFS2 image browser
+Comment=Browse and extract files from an encrypted PS4 UFS2 image
+Exec=ps4ufs-qt
+Icon=ps4ufs-qt
+Categories=Utility;
+Terminal=false

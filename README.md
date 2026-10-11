@@ -7,7 +7,8 @@ Script to retrieve any file from a eap hdd encrypted partition from ps4
 |------|------|
 | `ps4ufs.py` | original Python script |
 | `ps4ufs.c` / `ps4ufs.exe` | C port (CLI): `parts`, `info`, `ls`, `stat`, `tree`, `cat`, `get`, `getdir`, `find`, `scan`, `carve`, `recover`, `shell` |
-| `ps4ufs_gui.c` / `ps4ufs_gui.exe` | Windows GUI built on the same core |
+| `ps4ufs_gui.c` / `ps4ufs_gui.exe` | original Windows-only Win32 GUI |
+| `qt/` | **cross-platform Qt 6 GUI** (`ps4ufs-qt`) built on the same core — Windows, Linux, macOS |
 
 ## GUI
 
@@ -27,13 +28,37 @@ Script to retrieve any file from a eap hdd encrypted partition from ps4
 
 Settings are remembered in `ps4ufs_gui.ini` next to the exe.
 
-## Build (MSVC x64)
+## Qt GUI (`ps4ufs-qt`) — Windows / Linux / macOS
+
+The `qt/` directory is a Qt 6 Widgets port of the browser with the same feature set
+(partition picker, folder tree + sortable file list, extract with progress/cancel,
+recursive find, text/hex viewer, properties, Scan/Recover, drag & drop). It reuses
+`ps4ufs.c` **unchanged**: `qt/core_bridge.c` compiles the core with `PS4UFS_GUI`
+defined and exposes a small C API (`qt/core_bridge.h`) that the C++ front-end calls;
+the core's `die()`/`longjmp` error model is contained entirely within C frames and
+surfaced as return codes. Settings persist via `QSettings`.
+
+Prebuilt archives for all three platforms are attached to each
+[release](../../releases) (`ps4ufs-qt` GUI + `ps4ufs` CLI per OS).
+
+### Build everything with CMake
 
 ```
-build_gui.bat        :: ps4ufs_gui.exe
-build_gui.bat cli    :: ps4ufs_gui.exe + ps4ufs.exe
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/<kit>
+cmake --build build
+# -> build/ps4ufs  (CLI)  and  build/ps4ufs-qt  (GUI)
 ```
 
-The GUI compiles `ps4ufs.c` in with `PS4UFS_GUI` defined (which turns `die()` into a
-recoverable error and drops the CLI `main`), so the CLI still builds standalone with
-`gcc -O2 -o ps4ufs ps4ufs.c` / `cl /O2 ps4ufs.c`.
+If Qt 6 is not found the CLI still builds. Link `-lpthread` is handled by CMake.
+
+## Build the CLI / old Win32 GUI directly
+
+```
+gcc -O2 -o ps4ufs ps4ufs.c          # portable CLI (Linux/macOS/MinGW)
+cl  /O2 ps4ufs.c                     # MSVC CLI
+build_gui.bat                        # original Win32 ps4ufs_gui.exe (MSVC)
+build_gui.bat cli                    # + ps4ufs.exe
+```
+
+The core compiles the same standalone (its CLI `main` is dropped only when
+`PS4UFS_GUI` is defined).

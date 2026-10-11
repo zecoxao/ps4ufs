@@ -188,7 +188,8 @@ static int cpu_count(void) {
 #define NIADDR       3           /* indirect block pointers */
 #define PKG_MAGIC    "\x7f""CNT" /* PS4 .pkg (CNT) magic (4 bytes) */
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(_MSC_VER)
+/* MSVC's CRT has no strtok_r; MinGW-w64 and POSIX libc do. */
 static char *strtok_r(char *s, const char *d, char **save);   /* shim, defined below */
 #endif
 
@@ -977,8 +978,8 @@ static void norm_path(const char *in, char *out, size_t outsz) {
     out[oi] = 0;
 }
 
-#ifdef _WIN32
-/* strtok_r shim */
+#if defined(_WIN32) && defined(_MSC_VER)
+/* strtok_r shim (MSVC only) */
 static char *strtok_r(char *s, const char *d, char **save) {
     if (!s) s = *save;
     if (!s) return NULL;

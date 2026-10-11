@@ -41,7 +41,9 @@ typedef struct {
 
 /* progress / cancel callback: return non-zero to request cancellation.
  * total may be 0 when unknown (indeterminate). */
-typedef int (*ps4ufs_progress_cb)(int64_t done, int64_t total, void *ud);
+/* long long (not int64_t) so the signature matches the Qt trampoline on all
+ * platforms - on LP64 Linux int64_t is `long`, distinct from `long long`. */
+typedef int (*ps4ufs_progress_cb)(long long done, long long total, void *ud);
 /* log line sink (used by scan/recover) */
 typedef void (*ps4ufs_log_cb)(const char *line, void *ud);
 

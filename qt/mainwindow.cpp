@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QMimeData>
 #include <algorithm>
+#include <cstring>
 
 /* ----------------------------------------------------------------------- */
 static QString humanSize(quint64 n) {

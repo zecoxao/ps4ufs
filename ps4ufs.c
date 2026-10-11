@@ -389,6 +389,7 @@ typedef struct {
 
 static decrypt_pool g_pool;
 static int          g_nthreads = 1;
+static volatile int g_abort = 0;   /* set by the GUI to cancel a running scan/recover */
 
 static void pool_decrypt_serial(const xts_ctx *xts, uint8_t *buf,
                                 uint64_t base_sector, int64_t nsectors) {
@@ -479,12 +480,25 @@ static uint64_t rd_u64(const uint8_t *p) {
 }
 static int64_t  rd_i64(const uint8_t *p) { return (int64_t)rd_u64(p); }
 
+#ifdef PS4UFS_GUI
+/* provided by ps4ufs_gui.c: reports the error and aborts the current GUI
+ * operation (never returns) */
+static void gui_die(const char *msg);
+#endif
+
 static void die(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
+#ifdef PS4UFS_GUI
+    char msg[1024];
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    gui_die(msg);
+#else
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
     exit(1);
+#endif
 }
 
 /* ==========================================================================
@@ -1525,7 +1539,7 @@ static THREAD_RET detect_worker(void *arg) {
     uint8_t *buf = (uint8_t *)malloc(SCAN_CHUNK);
     if (!buf) die("out of memory");
     uint64_t pos = a->start;
-    while (pos < a->end) {
+    while (pos < a->end && !g_abort) {
         size_t want = (size_t)((a->end - pos < SCAN_CHUNK) ? (a->end - pos) : SCAN_CHUNK);
         FSEEK64(f, (int64_t)(a->part_offset + pos), SEEK_SET);
         size_t got = fread(buf, 1, want, f);
@@ -1624,7 +1638,7 @@ static uint64_t carve_defrag(CryptImage *ci, cgcache *cc, const Superblock *sb,
     int64_t fsize = sb->fsize;
     int64_t fr = (int64_t)(off / fsize);
     uint64_t wrote = 0;
-    while (wrote < size) {
+    while (wrote < size && !g_abort) {
         if (!frag_is_free(cc, fr)) { fr++; (*skipped)++; continue; }
         int64_t remain = (int64_t)((size - wrote + fsize - 1) / fsize);
         int64_t run = 1;
@@ -1665,7 +1679,7 @@ static uint64_t carve_geom(CryptImage *ci, const Superblock *sb,
     int64_t dblkno = sb->dblkno;            /* first data frag within each cg */
     int64_t fr = (int64_t)(off / fsize);
     uint64_t wrote = 0;
-    while (wrote < size) {
+    while (wrote < size && !g_abort) {
         int64_t within = fr % fpg;
         if (within < dblkno) {              /* cg reserved metadata region -> skip */
             int64_t skip = dblkno - within;
@@ -1700,7 +1714,7 @@ static THREAD_RET carve_worker(void *arg) {
         MTX_LOCK(&st->mtx);
         int j = (st->next < st->hits->n) ? st->next++ : -1;
         MTX_UNLOCK(&st->mtx);
-        if (j < 0) break;
+        if (j < 0 || g_abort) break;
 
         pkg_hit *h = &st->hits->v[j];
         char outpath[8192];
@@ -1724,7 +1738,7 @@ static THREAD_RET carve_worker(void *arg) {
                 } else {
                     uint64_t rem = h->size;
                     FSEEK64(ci.f, (int64_t)(st->part_offset + h->offset), SEEK_SET);
-                    while (rem > 0) {
+                    while (rem > 0 && !g_abort) {
                         size_t want = (size_t)(rem < CARVE_CHUNK ? rem : CARVE_CHUNK);
                         size_t got  = fread(buf, 1, want, ci.f);
                         if (got == 0) break;
@@ -1946,7 +1960,7 @@ static void cmd_recover(UFS2FS *fs, const char *outroot, int64_t min_size,
     int64_t  part_frags = sb->size;                        /* fs size in frags   */
     uint64_t part_bytes = (uint64_t)sb->size * sb->fsize;  /* fs size in bytes   */
 
-    for (uint32_t ino = ROOTINO; ino < total_inodes; ino++) {
+    for (uint32_t ino = ROOTINO; ino < total_inodes && !g_abort; ino++) {
         int64_t cg     = ino / (uint32_t)sb->ipg;
         int64_t within = ino % (uint32_t)sb->ipg;
         int64_t blk    = within / inopb;
@@ -2010,7 +2024,7 @@ static void cmd_recover(UFS2FS *fs, const char *outroot, int64_t min_size,
     if (!dry_run) mkdirs(outroot);
 
     long long files = 0, errors = 0; uint64_t bytes = 0;
-    for (int i = 0; i < nhits; i++) {
+    for (int i = 0; i < nhits && !g_abort; i++) {
         Inode in; fs_inode(fs, hits[i].ino, &in);       /* re-read; resolves block map */
         char outpath[8192];
         snprintf(outpath, sizeof(outpath), "%s/%s.pkg", outroot, hits[i].cid);
@@ -2219,6 +2233,7 @@ static void cmd_parts(const char *img_path, const xts_ctx *xts, uint64_t ivoffse
 /* ==========================================================================
  * entry point
  * ======================================================================== */
+#ifndef PS4UFS_GUI   /* the GUI (ps4ufs_gui.c) provides its own entry point */
 static void usage(void) {
     fprintf(stderr,
       "usage: ps4ufs [--img PATH] [--keys PATH] [--part N|--partbase BYTES]\n"
@@ -2465,3 +2480,4 @@ int main(int argc, char **argv) {
     if (g_nthreads > 1) pool_shutdown();
     return 0;
 }
+#endif /* !PS4UFS_GUI */
